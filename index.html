@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArgumentO : Construis ton argumentation</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ════ START ════ -->
+<div id="start">
+  <div class="logo">🗺️</div>
+  <h1>ArgumentO</h1>
+  <p class="sub">Construis ton argumentation pas à pas</p>
+  <textarea id="thesis-in" placeholder="Écris ta thèse ici…&#10;Ex : « L'école devrait commencer à 9h30 »"></textarea>
+  <button class="go" id="start-go-btn" onclick="go()">C'est parti →</button>
+  <p class="hint">Tu seras guidé·e à travers le modèle de Toulmin pour construire une argumentation solide, structurée et équilibrée.</p>
+</div>
+
+<!-- ════ APP ════ -->
+<div id="app">
+  <!-- MODAL -->
+  <div id="modal-overlay" class="modal-overlay"></div>
+
+  <div class="wrap">
+    <div class="hdr">
+      <h1>ArgumentO</h1>
+      <div class="spacer"></div>
+      <button class="hbtn" id="export-map-btn">Exporter</button>
+      <button class="hbtn" id="import-map-btn">Importer</button>
+      <button class="hbtn" id="share-map-btn">Partager</button>
+      <button class="hbtn" id="open-summaries-btn">Voir tous les résumés</button>
+      <div class="score-box">
+        <span class="slbl">Score</span>
+        <div class="sbar"><div class="sfill" id="sfill"></div></div>
+        <span class="sval" id="sval">0</span>
+      </div>
+      <button class="hbtn rst" onclick="reset()">↺ Nouveau</button>
+    </div>
+    <div class="tree-legend">
+      <span class="tl-item"><span class="tl-dot t"></span>Thèse</span>
+      <span class="tl-item"><span class="tl-dot p"></span>Pour</span>
+      <span class="tl-item"><span class="tl-dot c"></span>Contre</span>
+      <span class="spacer-flex"></span>
+      <span class="tl-item tl-item-muted">Cliquer un nœud pour éditer · + pour ajouter</span>
+    </div>
+    <div class="tree-scroll">
+      <div id="ktree" class="ktree"></div>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="import-map-file" class="hidden-file" accept="application/json,.json" title="Importer une map JSON" aria-label="Importer une map JSON">
+
+<script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArgumentO : Lecture seule</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="view-modal-overlay" class="modal-overlay"></div>
+<div id="view-app" class="wrap view-wrap">
+  <div class="hdr">
+    <h1>ArgumentO : Lecture seule</h1>
+    <div class="spacer"></div>
+    <button class="hbtn" id="view-open-summaries-btn">Voir tous les résumés</button>
+    <div class="score-box">
+      <span class="slbl">Score</span>
+      <div class="sbar"><div class="sfill" id="view-sfill"></div></div>
+      <span class="sval" id="view-sval">0</span>
+    </div>
+    <span class="readonly-badge">Mode public</span>
+  </div>
+  <div class="view-meta" id="view-meta">Chargement…</div>
+  <div class="tree-legend">
+    <span class="tl-item"><span class="tl-dot t"></span>Thèse</span>
+    <span class="tl-item"><span class="tl-dot p"></span>Pour</span>
+    <span class="tl-item"><span class="tl-dot c"></span>Contre</span>
+    <span class="spacer-flex"></span>
+    <span class="tl-item tl-item-muted">Visualisation uniquement</span>
+  </div>
+  <div class="tree-scroll">
+    <div id="view-ktree" class="ktree"></div>
+  </div>
+</div>
+<script src="view.js"></script>
+</body>
+</html>
