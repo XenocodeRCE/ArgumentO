@@ -1,4 +1,6 @@
-# ArguMap
+# ArgumentO
+
+![](https://i.imgur.com/yfGluNn.png)
 
 Application web pour construire une argumentation avec une structure inspiree du modele de Toulmin.
 
