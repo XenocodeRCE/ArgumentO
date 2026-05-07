@@ -14,7 +14,10 @@
   <h1>ArgumentO</h1>
   <p class="sub">Construis ton argumentation pas à pas</p>
   <textarea id="thesis-in" placeholder="Écris ta thèse ici…&#10;Ex : « L'école devrait commencer à 9h30 »"></textarea>
-  <button class="go" id="start-go-btn" onclick="go()">C'est parti →</button>
+  <div class="start-actions">
+    <button class="go" id="start-go-btn" onclick="go()">C'est parti →</button>
+    <button class="go secondary" id="start-import-btn">Importer ?</button>
+  </div>
   <p class="hint">Tu seras guidé·e à travers le modèle de Toulmin pour construire une argumentation solide, structurée et équilibrée.</p>
 </div>
 
@@ -29,6 +32,14 @@
       <div class="spacer"></div>
       <button class="hbtn" id="export-map-btn">Exporter</button>
       <button class="hbtn" id="import-map-btn">Importer</button>
+      <div class="verify-stack">
+        <div class="verify-circles" aria-label="Compteurs de problèmes">
+          <span class="verify-circle green" id="verify-count-low">0</span>
+          <span class="verify-circle yellow" id="verify-count-medium">0</span>
+          <span class="verify-circle red" id="verify-count-high">0</span>
+        </div>
+        <button class="hbtn" id="verify-map-btn">Vérifier</button>
+      </div>
       <button class="hbtn" id="share-map-btn">Partager</button>
       <button class="hbtn" id="open-summaries-btn">Voir tous les résumés</button>
       <div class="score-box">

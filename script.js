@@ -3,7 +3,67 @@
    ══════════════════════════════ */
 let uid=0,tree=null,openModalId=null,modalView='edit',modalStepIndex=0;
 const QUALIFIERS=['toujours','necessairement','dans la plupart des cas','souvent','probablement','possible','rarement'];
+
+// Aide contextuelle pour chaque étape
+const STEP_HELP = {
+  claim: {
+    title: "Aide : formuler le claim",
+    intro: "Le claim est l'affirmation principale que tu veux défendre.",
+    examples: [
+      '<strong>Formule directe :</strong> <em>Je soutiens que ...</em> <br><span class="whelp-exp">Ex : Je soutiens que la liberté d\'expression doit être encadrée.</span>',
+      '<strong>Formule de renforcement :</strong> <em>On peut défendre que ...</em> <br><span class="whelp-exp">Ex : On peut défendre que l\'école devrait commencer plus tard.</span>',
+      '<strong>Formule d\'objection :</strong> <em>À l\'inverse, on pourrait objecter que ...</em> <br><span class="whelp-exp">Ex : À l\'inverse, on pourrait objecter que toute limitation est dangereuse.</span>'
+    ]
+  },
+  data: {
+    title: "Aide : donner les données",
+    intro: "Les données sont les faits, observations ou exemples qui soutiennent ton claim.",
+    examples: [
+      '<strong>Fait social :</strong> <em>Parce que ...</em> <br><span class="whelp-exp">Ex : Parce que la plupart des pays ont des lois sur la diffamation.</span>',
+      '<strong>Observation :</strong> <em>On observe que ...</em> <br><span class="whelp-exp">Ex : On observe que les élèves sont moins fatigués quand l\'école commence plus tard.</span>',
+      '<strong>Appui empirique :</strong> <em>Des études montrent que ...</em> <br><span class="whelp-exp">Ex : Des études montrent que la censure précède souvent l\'autoritarisme.</span>'
+    ]
+  },
+  warrant: {
+    title: "Aide : structurer le warrant",
+    intro: "Le warrant relie les données à la conclusion. Voici des structures types et leur usage :",
+    examples: [
+      '<strong>Si ... alors ...</strong> <br><span class="whelp-exp">Ex : <em>Si une mesure réduit les accidents, alors elle améliore la sécurité publique.</em></span>',
+      '<strong>En général, quand ... , ...</strong> <br><span class="whelp-exp">Ex : <em>En général, quand on limite la vitesse, les accidents diminuent.</em></span>',
+      '<strong>Parce que ... , on peut en déduire que ...</strong> <br><span class="whelp-exp">Ex : <em>Parce que la fatigue réduit l’attention, on peut en déduire que commencer plus tard améliore la concentration.</em></span>',
+      '<strong>Dans ce contexte, ... implique ...</strong> <br><span class="whelp-exp">Ex : <em>Dans ce contexte, protéger la liberté d’expression implique d’accepter la critique.</em></span>'
+    ]
+  },
+  backing: {
+    title: "Aide : appuyer le raisonnement",
+    intro: "Le backing est une source, une autorité ou une référence qui renforce ton warrant.",
+    examples: [
+      '<strong>Référence théorique :</strong> <em>Selon ...</em> <br><span class="whelp-exp">Ex : Selon John Stuart Mill, la liberté s\'arrête où commence le dommage à autrui.</span>',
+      '<strong>Référence scientifique :</strong> <em>Des études montrent que ...</em> <br><span class="whelp-exp">Ex : Des études montrent que l\'exposition à la haine a des effets mesurables.</span>',
+      '<strong>Référence juridique :</strong> <em>La jurisprudence ...</em> <br><span class="whelp-exp">Ex : La jurisprudence internationale va dans ce sens.</span>'
+    ]
+  },
+  qualifier: {
+    title: "Aide : choisir un modalisateur",
+    intro: "Le qualifier nuance la portée de ton argument.",
+    examples: [
+      '<strong>Fort :</strong> <em>Toujours</em>, <em>Nécessairement</em> <br><span class="whelp-exp">À utiliser seulement si tes preuves sont très solides.</span>',
+      '<strong>Moyen :</strong> <em>Souvent</em>, <em>Dans la plupart des cas</em> <br><span class="whelp-exp">Utile pour des tendances générales.</span>',
+      '<strong>Prudent :</strong> <em>Probablement</em>, <em>Possible</em>, <em>Rarement</em> <br><span class="whelp-exp">Idéal quand il existe des exceptions.</span>'
+    ]
+  },
+  rebuttal: {
+    title: "Aide : comprendre le rebuttal",
+    intro: "Le rebuttal anticipe une objection ou une limite à ton argument.",
+    examples: [
+      '<strong>Objection de principe :</strong> <em>Cependant, on pourrait objecter que ...</em> <br><span class="whelp-exp">Ex : Cependant, on pourrait objecter que la liberté d\'expression protège aussi les idées impopulaires.</span>',
+      '<strong>Objection de limite :</strong> <em>Mais cela ignore ...</em> <br><span class="whelp-exp">Ex : Mais cela ignore les cas où l\'expression ne cause aucun préjudice.</span>',
+      '<strong>Objection de complexité :</strong> <em>Toutefois, ...</em> <br><span class="whelp-exp">Ex : Toutefois, certains discours sont difficiles à distinguer de simples opinions.</span>'
+    ]
+  }
+};
 const API_FILE='api.php';
+let verifyRequestSeq=0;
 const DEBUG = true;
 const DBG_PREFIX = '[ArgumentO DEBUG]';
 function dbg(...args){if(DEBUG)console.log(DBG_PREFIX,...args)}
@@ -101,6 +161,67 @@ function progressiveSummary(nd,showQualifier=false){
   return parts.join(' ');
 }
 
+function normalizeForFlags(text){
+  return (text||'')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9\s]/g,' ')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+
+function jaccardForFlags(a,b){
+  const toSet=t=>new Set(normalizeForFlags(t).split(/\s+/).filter(w=>w.length>2));
+  const sa=toSet(a),sb=toSet(b);
+  if(!sa.size||!sb.size)return 0;
+  const inter=[...sa].filter(x=>sb.has(x)).length;
+  const uni=new Set([...sa,...sb]).size;
+  return uni?inter/uni:0;
+}
+
+function localFlagCounts(){
+  if(!tree)return{high:0,medium:0,low:0};
+  const nodes=allNodes(tree);
+  const thesisClaim=(tree.claim||'').trim();
+  let high=0,medium=0,low=0;
+
+  const inc=s=>{if(s==='high')high++;else if(s==='medium')medium++;else low++;};
+
+  nodes.forEach(nd=>{
+    const claim=(nd.claim||'').trim();
+    const data=(nd.data||'').trim();
+    const warrant=(nd.warrant||'').trim();
+    const backing=(nd.backing||'').trim();
+    const source=(nd.source||'').trim();
+    const qualifier=normalizeForFlags(nd.qualifier||'');
+
+    const sim=jaccardForFlags(data,warrant);
+    if(sim>0.6)inc(sim>0.8?'high':'medium');
+
+    const mins={claim:5,data:10,warrant:10,backing:5};
+    Object.entries(mins).forEach(([f,m])=>{
+      const v=((nd[f]||'').trim());
+      if(!v)return;
+      if(v.length<m)inc('low');
+    });
+
+    if(backing&&!source)inc('medium');
+
+    if(nd.type!=='thesis'){
+      const dup=jaccardForFlags(claim,thesisClaim);
+      if(dup>0.7)inc(dup>0.9?'high':'medium');
+    }
+
+    if(!qualifier)inc('low');
+
+    const strong=['certain','certainement','assurement','necessaire','necessairement','garanti','toujours'];
+    if(strong.includes(qualifier)&&!backing)inc('high');
+  });
+
+  return{high,medium,low};
+}
+
 /* ══════════════════════════════
    SCORE
    ══════════════════════════════ */
@@ -113,7 +234,9 @@ function calcScore(){
   let bal=0;if(tree.children.length){const hp=tree.children.some(c=>c.type==='pro'),hc=tree.children.some(c=>c.type==='contra');if(hp&&hc)bal=20;else if(hp||hc)bal=10}
   const rc=ns.filter(nd=>filled(derivedRebuttal(nd))).length;const reb=n>0?(rc/n)*15:0;
   const sc=ns.filter(nd=>filled(nd.source||'')).length;const src=n>0?(sc/n)*8:0;
-  const total=Math.min(100,Math.round(comp+dep+bal+reb+src));
+  const fc=localFlagCounts();
+  const penalty=Math.min(38,fc.high*8+fc.medium*3+fc.low*1.2);
+  const total=Math.min(100,Math.max(0,Math.round(comp+dep+bal+reb+src-penalty)));
   let label,emoji,color;
   if(total<25){label='Début';emoji='🌱';color='#ef476f'}
   else if(total<45){label='En construction';emoji='🌿';color='#ff9f43'}
@@ -202,6 +325,79 @@ function closeModal(){
   renderTree();
 }
 
+function setStepHelpOpen(open){
+  const ov=document.getElementById('modal-overlay');
+  if(!ov)return;
+  const help=ov.querySelector('.whelp-overlay');
+  if(!help)return;
+  help.classList.toggle('open',!!open);
+  help.setAttribute('aria-hidden',open?'false':'true');
+}
+
+function ensureNoticeOverlay(){
+  let ov=document.getElementById('notice-overlay');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='notice-overlay';
+    ov.className='modal-overlay';
+    ov.style.display='none';
+    document.body.appendChild(ov);
+  }
+  return ov;
+}
+
+function buildNoticeModal(title,message,tone='info'){
+  const badge=tone==='error'?'contra':(tone==='success'?'pro':'thesis');
+  const safeTitle=esc(title||'Information');
+  const safeMsg=esc(message||'').replace(/\n/g,'<br>');
+  let h='<div class="modal" role="dialog" aria-modal="true" aria-label="Notification">';
+  h+='<div class="modal-head">';
+  h+='<span class="badge '+badge+'">'+safeTitle+'</span>';
+  h+='<span class="spacer"></span>';
+  h+='<button class="close-modal" type="button" data-action="close-notice">✕</button>';
+  h+='</div>';
+  h+='<div class="sum-empty" style="margin-top:.35rem">'+safeMsg+'</div>';
+  h+='<div class="modal-acts">';
+  h+='<button class="abtn av" type="button" data-action="close-notice">OK</button>';
+  h+='</div>';
+  h+='</div>';
+  return h;
+}
+
+function openNoticeModal(title,message,tone='info'){
+  const ov=ensureNoticeOverlay();
+  modalView='notice';
+  ov.style.display='flex';
+  ov.innerHTML=buildNoticeModal(title,message,tone);
+}
+
+function closeNoticeModal(){
+  const ov=document.getElementById('notice-overlay');
+  if(!ov)return;
+  ov.style.display='none';
+  ov.innerHTML='';
+  if(modalView==='notice')modalView='edit';
+}
+
+function refreshStepHelpContent(stepField){
+  const ov=document.getElementById('modal-overlay');
+  if(!ov)return;
+  const help=STEP_HELP[stepField]||STEP_HELP.claim;
+  const titleEl=ov.querySelector('.whelp-title');
+  const introEl=ov.querySelector('.whelp-intro');
+  const listEl=ov.querySelector('.whelp-list');
+  if(titleEl)titleEl.textContent=help.title;
+  if(introEl)introEl.textContent=help.intro;
+  if(listEl){
+    listEl.innerHTML='';
+    help.examples.forEach(ex=>{
+      const li=document.createElement('li');
+      li.innerHTML=ex;
+      listEl.appendChild(li);
+    });
+  }
+}
+
 function renderModal(){
   modalView='edit';
   const nd=find(tree,openModalId);
@@ -250,7 +446,9 @@ function buildModal(nd){
   ss.forEach((st,i)=>{h+='<span class="step-dot'+(i===stepIdx?' active':'')+(i<stepIdx?' done':'')+'"></span>';});
   h+='</div>';
   h+='<div class="step" data-step-index="'+stepIdx+'">';
-  h+='<div class="step-head"><span class="step-icon">'+cur.icon+'</span><span class="step-concept">'+cur.concept+'</span></div>';
+  h+='<div class="step-head"><span class="step-icon">'+cur.icon+'</span><span class="step-concept">'+cur.concept+'</span>';
+  if(cur.f&&STEP_HELP[cur.f]) h+='<button class="step-help-btn" type="button" data-action="open-step-help">Aide</button>';
+  h+='</div>';
   if(cur.dynamic)h+='<div class="step-prompt">'+esc(warrantPrompt(nd))+'</div>';
   else h+='<div class="step-prompt">'+esc(cur.prompt)+'</div>';
   if(cur.isQ){
@@ -273,6 +471,18 @@ function buildModal(nd){
   else h+='<button class="abtn av" data-nid="'+nd.id+'" data-action="validate">✅ Valider</button>';
   if(sm)h+='<button class="abtn as" data-nid="'+nd.id+'" data-action="copy">📋 Copier le résumé</button>';
   if(nd.type!=='thesis')h+='<button class="abtn ad" data-nid="'+nd.id+'" data-action="del">🗑️ Supprimer</button>';
+  h+='</div>';
+
+  const help = STEP_HELP[cur.f] || STEP_HELP['claim'];
+  h+='<div class="whelp-overlay" aria-hidden="true">';
+  h+='<div class="whelp-box" role="dialog" aria-modal="true" aria-label="Aide">';
+  h+='<div class="whelp-head"><span class="whelp-title">'+esc(help.title)+'</span><button class="whelp-close" type="button" data-action="close-step-help">✕</button></div>';
+  h+='<p class="whelp-intro">'+esc(help.intro)+'</p>';
+  h+='<ul class="whelp-list">';
+  // Contenu HTML contrôlé (constant locale STEP_HELP)
+  help.examples.forEach(ex=>{ h+='<li>'+ex+'</li>'; });
+  h+='</ul>';
+  h+='</div>';
   h+='</div>';
 
   h+='</div>';
@@ -309,6 +519,24 @@ function softModal(){
   if(stepEl){
     const concept=stepEl.querySelector('.step-concept');if(concept)concept.textContent=cur.concept;
     const icon=stepEl.querySelector('.step-icon');if(icon)icon.textContent=cur.icon;
+    refreshStepHelpContent(cur.f);
+    const head=stepEl.querySelector('.step-head');
+    if(head){
+      const helpBtn=head.querySelector('.step-help-btn');
+      if(cur.f&&STEP_HELP[cur.f]){
+        if(!helpBtn){
+          const hb=document.createElement('button');
+          hb.className='step-help-btn';
+          hb.type='button';
+          hb.dataset.action='open-step-help';
+          hb.textContent='Aide';
+          head.appendChild(hb);
+        }
+      }else{
+        if(helpBtn)helpBtn.remove();
+        setStepHelpOpen(false);
+      }
+    }
     const prompt=stepEl.querySelector('.step-prompt');if(prompt)prompt.textContent=cur.dynamic?warrantPrompt(nd):cur.prompt;
     const stepCount=ov.querySelector('.step-count');if(stepCount)stepCount.textContent='Étape '+(stepIdx+1)+' / '+ss.length;
     ov.querySelectorAll('.step-dot').forEach((dot,i)=>{
@@ -406,6 +634,8 @@ document.addEventListener('click',function(e){
   // Close modal
   if(e.target.closest('[data-close]')){closeModal();return}
   if(e.target.id==='modal-overlay'){closeModal();return}
+  if(e.target.id==='notice-overlay'){closeNoticeModal();return}
+  if(e.target.classList&&e.target.classList.contains('whelp-overlay')){setStepHelpOpen(false);return}
 
   // Quick delete from card
   const kdel=e.target.closest('[data-delcard]');
@@ -436,6 +666,17 @@ document.addEventListener('click',function(e){
   const ab=e.target.closest('[data-action]');
   if(ab){
     const nid=ab.dataset.nid,act=ab.dataset.action;
+    if(act==='close-notice'){closeNoticeModal();return}
+    if(act==='open-step-help'){
+      const nd=find(tree,openModalId);if(!nd)return;
+      const ss=modalSteps(nd);
+      const stepIdx=Math.min(modalStepIndex,maxReachableStep(nd));
+      const cur=ss[stepIdx];
+      refreshStepHelpContent(cur&&cur.f);
+      setStepHelpOpen(true);
+      return;
+    }
+    if(act==='close-step-help'){setStepHelpOpen(false);return}
     if(act==='prev-step'){if(modalStepIndex>0){modalStepIndex--;softModal();}return}
     if(act==='next-step'){
       const nd=find(tree,openModalId);if(!nd)return;
@@ -444,7 +685,7 @@ document.addEventListener('click',function(e){
       if(modalStepIndex<mx&&stepCanAdvance(nd,cur)){modalStepIndex++;softModal();}
       return;
     }
-    if(act==='validate'){closeModal();return}
+    if(act==='validate'){closeModal();autoVerifyMap();return}
     if(act==='del'){del(nid);return}
     if(act==='copy'){copySum(nid,ab);return}
   }
@@ -453,7 +694,16 @@ document.addEventListener('click',function(e){
   if(openSums){openSummariesModal();return}
 });
 
-document.addEventListener('keydown',function(e){if(e.key==='Escape'&&(openModalId||modalView==='summary'))closeModal()});
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Escape')return;
+  const nov=document.getElementById('notice-overlay');
+  const noticeOpen=!!(nov&&nov.style.display!=='none');
+  if(noticeOpen){closeNoticeModal();return;}
+  const ov=document.getElementById('modal-overlay');
+  const helpOpen=!!(ov&&ov.querySelector('.whelp-overlay.open'));
+  if(helpOpen){setStepHelpOpen(false);return;}
+  if(openModalId||modalView==='summary')closeModal();
+});
 
 document.addEventListener('keydown',function(e){
   if(e.key!=='Enter')return;
@@ -475,6 +725,7 @@ document.addEventListener('keydown',function(e){
 
   if(stepIdx>=maxIdx){
     closeModal();
+    autoVerifyMap();
   }
 });
 
@@ -483,6 +734,7 @@ function addKid(pid,type){
   const c=mk(type);p.children.push(c);
   closeModal();
   renderTree();
+  autoVerifyMap();
   // auto-open new node
   setTimeout(()=>openModal(c.id),150);
 }
@@ -491,6 +743,7 @@ function del(nid,close=true){
   rm(tree,nid);
   if(close)closeModal();
   else renderTree();
+  autoVerifyMap();
 }
 function copySum(nid,btn){
   const nd=find(tree,nid);if(!nd)return;
@@ -502,7 +755,7 @@ function copySum(nid,btn){
 
 async function shareMap(){
   if(!tree){
-    alert('Crée d\'abord une map avant de la partager.');
+    openNoticeModal('Action impossible','Crée d\'abord une map avant de la partager.','error');
     return;
   }
 
@@ -511,10 +764,11 @@ async function shareMap(){
   if(shareBtn){shareBtn.disabled=true;shareBtn.textContent='Partage...';}
 
   try{
+    const serializablePayload=await buildSerializableMapPayload();
     const res=await fetch(API_FILE+'?action=save',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({tree})
+      body:JSON.stringify({tree:serializablePayload.tree})
     });
     const payload=await res.json();
     if(!res.ok||!payload.ok)throw new Error(payload.error||'Erreur serveur');
@@ -528,28 +782,188 @@ async function shareMap(){
       });
     } else if(navigator.clipboard&&navigator.clipboard.writeText){
       await navigator.clipboard.writeText(link);
-      alert('Lien copié : '+link+'\nUID: '+payload.uid);
+      openNoticeModal('Partage prêt','Lien copié : '+link+'\nUID: '+payload.uid,'success');
     } else {
       window.prompt('Copie ce lien de partage :',link);
     }
   }catch(err){
-    alert('Impossible de partager la map : '+(err.message||String(err)));
+    openNoticeModal('Partage impossible','Impossible de partager la map : '+(err.message||String(err)),'error');
   }finally{
     if(shareBtn){shareBtn.disabled=false;shareBtn.textContent=oldLabel;}
   }
 }
 
-function exportMap(){
+function severityBadge(sev){
+  const s=(sev||'low').toLowerCase();
+  const lbl=s==='high'?'Élevé':(s==='medium'?'Moyen':'Faible');
+  return '<span class="vsev '+s+'">'+lbl+'</span>';
+}
+
+function cloneTreeWithFlags(node,flagsById){
+  if(!node)return null;
+  const flags=flagsById.get(node.id)||[];
+  return {
+    ...node,
+    flags:flags.map(flag=>({ ...flag })),
+    children:(node.children||[]).map(child=>cloneTreeWithFlags(child,flagsById))
+  };
+}
+
+async function requestVerifySnapshot(){
+  const res=await fetch(API_FILE+'?action=verify',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({tree})
+  });
+  const raw=await res.text();
+  if(!raw||!raw.trim())throw new Error('Réponse serveur vide (action verify).');
+  let payload;
+  try{
+    payload=JSON.parse(raw);
+  }catch(parseErr){
+    const preview=raw.slice(0,180).replace(/\s+/g,' ');
+    throw new Error('Réponse verify non-JSON: '+preview);
+  }
+  if(!res.ok||!payload.ok)throw new Error(payload.error||'Erreur serveur');
+  return payload;
+}
+
+async function buildSerializableMapPayload(){
+  const report=await requestVerifySnapshot();
+  const flagsById=new Map((report.nodes||[]).map(node=>[node.id,node.flags||[]]));
+  return {
+    version:2,
+    exportedAt:new Date().toISOString(),
+    verificationSummary:report.summary||{},
+    flagsGeneratedAt:report.generatedAt||null,
+    tree:cloneTreeWithFlags(tree,flagsById)
+  };
+}
+
+function buildVerifyModal(report){
+  const sm=report.summary||{};
+  const nodes=Array.isArray(report.nodes)?report.nodes:[];
+  let h='<div class="modal sum-modal verify-modal">';
+  h+='<div class="modal-head">';
+  h+='<span class="badge thesis">Vérification</span>';
+  h+='<span class="mnum">'+(sm.totalFlags||0)+' signalement(s)</span>';
+  h+='<span class="spacer"></span>';
+  h+='<button class="close-modal" data-close>✕</button>';
+  h+='</div>';
+
+  h+='<div class="verify-summary">';
+  h+='<span class="vstat">Nœuds: <strong>'+(sm.totalNodes||0)+'</strong></span>';
+  h+='<span class="vstat">Avec alertes: <strong>'+(sm.nodesWithFlags||0)+'</strong></span>';
+  h+='<span class="vstat high">Élevé: <strong>'+(sm.high||0)+'</strong></span>';
+  h+='<span class="vstat med">Moyen: <strong>'+(sm.medium||0)+'</strong></span>';
+  h+='<span class="vstat low">Faible: <strong>'+(sm.low||0)+'</strong></span>';
+  h+='</div>';
+
+  if(!nodes.length){
+    h+='<div class="sum-empty">Aucune alerte détectée. Structure globalement cohérente.</div>';
+  }else{
+    h+='<div class="verify-list">';
+    nodes.forEach(n=>{
+      h+='<div class="verify-node">';
+      h+='<div class="verify-head"><span class="sum-num">'+esc(n.path||'?')+'</span><span class="sum-title '+(n.type||'pro')+'">'+esc((n.type||'').toUpperCase())+'</span></div>';
+      h+='<p class="verify-claim">'+esc(n.claimPreview||'(sans claim)')+'</p>';
+      h+='<ul class="verify-flags">';
+      (n.flags||[]).forEach(f=>{
+        h+='<li>'+severityBadge(f.severity)+' <strong>'+esc(f.type||'flag')+'</strong> · '+esc(f.hint||'')+'</li>';
+      });
+      h+='</ul>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+
+  h+='</div>';
+  return h;
+}
+
+function setVerifyCounts(summary){
+  const lowEl=document.getElementById('verify-count-low');
+  const medEl=document.getElementById('verify-count-medium');
+  const highEl=document.getElementById('verify-count-high');
+  if(lowEl)lowEl.textContent=String((summary&&summary.low)||0);
+  if(medEl)medEl.textContent=String((summary&&summary.medium)||0);
+  if(highEl)highEl.textContent=String((summary&&summary.high)||0);
+}
+
+async function requestVerifyReport(showAlertOnError=true){
+  const reqSeq=++verifyRequestSeq;
+  try{
+    const res=await fetch(API_FILE+'?action=verify',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tree})
+    });
+    const raw=await res.text();
+    if(!raw||!raw.trim()){
+      throw new Error('Réponse serveur vide (action verify).');
+    }
+    let payload;
+    try{
+      payload=JSON.parse(raw);
+    }catch(parseErr){
+      const preview=raw.slice(0,180).replace(/\s+/g,' ');
+      throw new Error('Réponse verify non-JSON: '+preview);
+    }
+    if(!res.ok||!payload.ok)throw new Error(payload.error||'Erreur serveur');
+    if(reqSeq!==verifyRequestSeq)return null;
+    setVerifyCounts(payload.summary||{});
+    return payload;
+  }catch(err){
+    if(showAlertOnError){
+      openNoticeModal('Vérification impossible','Impossible d\'exécuter la vérification : '+(err.message||String(err)),'error');
+    } else {
+      dbgWarn('verify auto failed', err.message||String(err));
+    }
+    return null;
+  }
+}
+
+function autoVerifyMap(){
   if(!tree){
-    alert('Aucune map à exporter pour le moment.');
+    setVerifyCounts({low:0,medium:0,high:0});
+    return;
+  }
+  requestVerifyReport(false);
+}
+
+async function verifyMap(){
+  if(!tree){
+    openNoticeModal('Action impossible','Crée d\'abord une map avant de lancer la vérification.','error');
     return;
   }
 
-  const payload={
-    version:1,
-    exportedAt:new Date().toISOString(),
-    tree
-  };
+  const verifyBtn=document.getElementById('verify-map-btn');
+  const oldLabel=verifyBtn?verifyBtn.textContent:'Vérifier';
+  if(verifyBtn){verifyBtn.disabled=true;verifyBtn.textContent='Vérification...';}
+
+  try{
+    const payload=await requestVerifyReport(false);
+    if(!payload)return;
+
+    modalView='summary';
+    const ov=document.getElementById('modal-overlay');
+    if(!ov)return;
+    ov.style.display='flex';
+    ov.innerHTML=buildVerifyModal(payload);
+  }catch(err){
+    openNoticeModal('Vérification impossible','Impossible d\'exécuter la vérification : '+(err.message||String(err)),'error');
+  }finally{
+    if(verifyBtn){verifyBtn.disabled=false;verifyBtn.textContent=oldLabel;}
+  }
+}
+
+async function exportMap(){
+  if(!tree){
+    openNoticeModal('Export impossible','Aucune map à exporter pour le moment.','error');
+    return;
+  }
+
+  const payload=await buildSerializableMapPayload();
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
@@ -611,9 +1025,10 @@ async function importMapFromFile(file){
       appEl.style.display='block';
     }
     renderTree();
-    alert('Import réussi. Ta map est chargée.');
+    autoVerifyMap();
+    openNoticeModal('Import réussi','Ta map est chargée.','success');
   }catch(err){
-    alert('Import impossible : '+(err.message||String(err)));
+    openNoticeModal('Import impossible',(err.message||String(err)),'error');
   }
 }
 
@@ -647,7 +1062,7 @@ function buildSummariesModal(){
     return 0;
   });
 
-  let h='<div class="modal sum-modal">';
+  let h='<div class="modal sum-modal global-summaries-modal">';
   h+='<div class="modal-head">';
   h+='<span class="badge thesis">Résumés globaux</span>';
   h+='<span class="mnum">'+ready.length+' / '+list.length+' complets</span>';
@@ -699,6 +1114,7 @@ function go(){
   startEl.style.display='none';
   appEl.style.display='block';
   renderTree();
+  autoVerifyMap();
   dbg('go: rendu principal termine, ouverture modal dans 200ms');
   setTimeout(()=>openModal(tree.id),200);
 }
@@ -715,6 +1131,7 @@ function reset(){
   startEl.style.display='';
   appEl.style.display='none';
   thesisInput.value='';
+  autoVerifyMap();
 }
 const thesisInputEl = document.getElementById('thesis-in');
 if(thesisInputEl){
@@ -747,15 +1164,28 @@ if(shareMapBtn){
   shareMapBtn.addEventListener('click',()=>shareMap());
 }
 
+const verifyMapBtn=document.getElementById('verify-map-btn');
+if(verifyMapBtn){
+  verifyMapBtn.addEventListener('click',()=>verifyMap());
+}
+
+setVerifyCounts({low:0,medium:0,high:0});
+
 const exportMapBtn=document.getElementById('export-map-btn');
 if(exportMapBtn){
   exportMapBtn.addEventListener('click',()=>exportMap());
 }
 
+const startImportBtn=document.getElementById('start-import-btn');
 const importMapBtn=document.getElementById('import-map-btn');
 const importMapFile=document.getElementById('import-map-file');
-if(importMapBtn&&importMapFile){
-  importMapBtn.addEventListener('click',()=>importMapFile.click());
+if(importMapFile){
+  if(importMapBtn){
+    importMapBtn.addEventListener('click',()=>importMapFile.click());
+  }
+  if(startImportBtn){
+    startImportBtn.addEventListener('click',()=>importMapFile.click());
+  }
   importMapFile.addEventListener('change',async e=>{
     const file=e.target.files&&e.target.files[0];
     await importMapFromFile(file);
